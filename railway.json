@@ -1,0 +1,34 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "name": "Blesta",
+  "description": "Production-ready Blesta runtime on Railway. Includes MySQL + persistent volume + cron worker.",
+  "services": [
+    {
+      "name": "web",
+      "source": { "type": "dockerfile" },
+      "variables": {
+        "APP_ENV": "production",
+        "APP_ROOT": "/data/blesta",
+        "WEB_ROOT": "/var/www/html",
+        "BLESTA_ZIP_URL": "",
+        "BLESTA_ZIP_SHA256": "",
+        "WAIT_FOR_DB_SECONDS": "60",
+        "PHP_MEMORY_LIMIT": "256M",
+        "PHP_UPLOAD_MAX_FILESIZE": "64M",
+        "PHP_POST_MAX_SIZE": "64M"
+      }
+    },
+    {
+      "name": "mysql",
+      "source": { "type": "database", "engine": "mysql" }
+    },
+    {
+      "name": "cron",
+      "source": { "type": "dockerfile" },
+      "variables": {
+        "APP_ROOT": "/data/blesta",
+        "WAIT_FOR_DB_SECONDS": "60"
+      }
+    }
+  ]
+}
