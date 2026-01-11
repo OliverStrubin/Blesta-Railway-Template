@@ -1,11 +1,10 @@
-FROM php:8.1-apache
+# Pin OS to avoid Debian upgrades breaking IMAP deps
+FROM php:8.1-apache-bookworm
 
 # -----------------------------
 # System dependencies
 # -----------------------------
-RUN set -eux; \
-  apt-get update; \
-  apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
     unzip \
     ca-certificates \
@@ -22,19 +21,11 @@ RUN set -eux; \
     # For gmp
     libgmp-dev \
     \
-    # For imap (package names vary by Debian release)
+    # For IMAP (UW-IMAP headers)
+    libc-client2007e-dev \
     libkrb5-dev \
-    libssl-dev; \
-  \
-  # Try install IMAP dev headers with best-effort fallbacks
-  if apt-cache show libc-client-dev >/dev/null 2>&1; then \
-    apt-get install -y --no-install-recommends libc-client-dev; \
-  elif apt-cache show libimap-dev >/dev/null 2>&1; then \
-    apt-get install -y --no-install-recommends libimap-dev; \
-  else \
-    echo "WARNING: IMAP build deps not found in this distro; imap extension may be skipped."; \
-  fi; \
-  rm -rf /var/lib/apt/lists/*
+    libssl-dev \
+ && rm -rf /var/lib/apt/lists/*
 
 # -----------------------------
 # PHP extensions (Blesta compatible + recommended)
@@ -50,18 +41,11 @@ RUN docker-php-ext-install \
     gmp \
     soap
 
-# IMAP (recommended if you receive mail via IMAP)
-# If build deps weren't available, this may fail; we'll make it non-fatal.
-RUN set -eux; \
-  if php -m | grep -qi imap; then \
-    echo "imap already enabled"; \
-  else \
-    (docker-php-ext-configure imap --with-kerberos --with-imap-ssl \
-     && docker-php-ext-install imap) \
-    || echo "WARNING: Could not build imap extension on this base image."; \
-  fi
+# IMAP (incoming mail support)
+RUN docker-php-ext-configure imap --with-kerberos --with-imap-ssl \
+ && docker-php-ext-install imap
 
-# Mailparse (recommended for parsing incoming emails)
+# Mailparse (incoming mail parsing)
 RUN pecl install mailparse \
  && docker-php-ext-enable mailparse
 
@@ -102,6 +86,7 @@ COPY healthcheck.php /var/www/html/healthcheck.php
 COPY entrypoint.sh /entrypoint.sh
 COPY cron.sh /cron.sh
 
+# Normalize scripts (CRLF-safe) and ensure executable
 RUN sed -i 's/\r$//' /entrypoint.sh /cron.sh \
  && chmod +x /entrypoint.sh /cron.sh
 
