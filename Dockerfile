@@ -29,19 +29,29 @@ RUN docker-php-ext-install \
     xml
 
 # -----------------------------
+# Install ionCube Loader (PHP 8.1)
+# -----------------------------
+RUN set -eux; \
+    cd /tmp; \
+    curl -fsSL https://downloads.ioncube.com/loader_downloads/ioncube_loaders_lin_x86-64.tar.gz -o ioncube.tar.gz; \
+    tar xzf ioncube.tar.gz; \
+    PHP_EXT_DIR="$(php -r 'echo ini_get("extension_dir");')"; \
+    cp ioncube/ioncube_loader_lin_8.1.so "$PHP_EXT_DIR"; \
+    echo "zend_extension=ioncube_loader_lin_8.1.so" > /usr/local/etc/php/conf.d/00-ioncube.ini; \
+    rm -rf /tmp/ioncube /tmp/ioncube.tar.gz
+
+# -----------------------------
 # Apache modules
 # -----------------------------
 RUN a2enmod rewrite headers expires
 
 # -----------------------------
-# HARD-FORCE SINGLE APACHE MPM (prefork)
-# Prevents "More than one MPM loaded"
+# HARD-FORCE single Apache MPM (prefork)
 # -----------------------------
 RUN set -eux; \
     a2dismod mpm_event mpm_worker mpm_prefork || true; \
     rm -f /etc/apache2/mods-enabled/mpm_*.load /etc/apache2/mods-enabled/mpm_*.conf || true; \
-    a2enmod mpm_prefork; \
-    apache2ctl -M | grep mpm
+    a2enmod mpm_prefork
 
 # -----------------------------
 # Apache vhost + healthcheck
@@ -55,7 +65,6 @@ COPY healthcheck.php /var/www/html/healthcheck.php
 COPY entrypoint.sh /entrypoint.sh
 COPY cron.sh /cron.sh
 
-# Normalize scripts (CRLF-safe) and ensure executable
 RUN sed -i 's/\r$//' /entrypoint.sh /cron.sh \
  && chmod +x /entrypoint.sh /cron.sh
 
@@ -68,10 +77,5 @@ ENV APP_ROOT=/data/blesta \
     PHP_UPLOAD_MAX_FILESIZE=64M \
     PHP_POST_MAX_SIZE=64M
 
-# -----------------------------
-# Railway uses dynamic PORT
-# -----------------------------
 EXPOSE 80
-
-# Use bash explicitly (avoids exec format edge cases)
 ENTRYPOINT ["bash", "/entrypoint.sh"]
