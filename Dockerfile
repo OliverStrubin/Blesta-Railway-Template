@@ -8,16 +8,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     ca-certificates \
     curl \
+    default-mysql-client \
+    \
+    # Needed for PHP extensions
     libzip-dev \
     libpng-dev \
     libonig-dev \
     libxml2-dev \
     libicu-dev \
-    default-mysql-client \
- && rm -rf /var/lib/apt/lists/*
+    \
+    # For gmp
+    libgmp-dev \
+    \
+    # For imap
+    libc-client2007e-dev \
+    libkrb5-dev \
+    libssl-dev \
+  && rm -rf /var/lib/apt/lists/*
 
 # -----------------------------
-# PHP extensions (Blesta compatible)
+# PHP extensions (Blesta compatible + recommended)
 # -----------------------------
 RUN docker-php-ext-install \
     pdo \
@@ -26,7 +36,17 @@ RUN docker-php-ext-install \
     intl \
     gd \
     mbstring \
-    xml
+    xml \
+    gmp \
+    soap
+
+# IMAP (recommended if you receive mail via IMAP)
+RUN docker-php-ext-configure imap --with-kerberos --with-imap-ssl \
+ && docker-php-ext-install imap
+
+# Mailparse (recommended for parsing incoming emails)
+RUN pecl install mailparse \
+ && docker-php-ext-enable mailparse
 
 # -----------------------------
 # Install ionCube Loader (PHP 8.1)
