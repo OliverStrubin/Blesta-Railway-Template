@@ -11,11 +11,24 @@ BLESTA_ZIP_SHA256="${BLESTA_ZIP_SHA256:-}"
 log() { echo "[web] $*"; }
 
 # -----------------------------
-# Configure Apache to listen on Railway PORT
+# FORCE SINGLE APACHE MPM (prefork) + configure PORT
 # -----------------------------
+log "Forcing single Apache MPM (prefork)..."
+
+# Disable other MPMs (best effort)
+a2dismod mpm_event  >/dev/null 2>&1 || true
+a2dismod mpm_worker >/dev/null 2>&1 || true
+
+# Remove any lingering enabled symlinks (this is what fixes "More than one MPM loaded")
+rm -f /etc/apache2/mods-enabled/mpm_event.load  /etc/apache2/mods-enabled/mpm_event.conf  || true
+rm -f /etc/apache2/mods-enabled/mpm_worker.load /etc/apache2/mods-enabled/mpm_worker.conf || true
+
+# Ensure prefork is enabled
+a2enmod mpm_prefork >/dev/null 2>&1 || true
+
 log "Configuring Apache to listen on PORT=${PORT}..."
 
-# Make ports.conf listen on $PORT (handle any existing Listen lines)
+# Make ports.conf listen on $PORT
 if grep -qE '^\s*Listen\s+' /etc/apache2/ports.conf; then
   sed -i -E "s/^\s*Listen\s+[0-9]+/Listen ${PORT}/g" /etc/apache2/ports.conf
 else
@@ -24,6 +37,9 @@ fi
 
 # Update vhost port
 sed -i -E "s/<VirtualHost \*:([0-9]+)>/<VirtualHost *:${PORT}>/" /etc/apache2/sites-available/000-default.conf || true
+
+log "Enabled MPM modules:"
+ls -la /etc/apache2/mods-enabled | grep mpm || true
 
 log "Validating Apache config..."
 apache2ctl configtest
@@ -88,9 +104,8 @@ APACHE_PID=$!
     log "Blesta already present in ${APP_ROOT}."
   fi
 
-  # IMPORTANT: Avoid slow recursive chmod/chown on every boot.
-  # Only ensure ownership on the app root (not whole /data).
-  log "Setting ownership on ${APP_ROOT} (non-recursive)..."
+  # Ownership (avoid touching whole /data)
+  log "Setting ownership on ${APP_ROOT}..."
   chown -R www-data:www-data "$APP_ROOT" >/dev/null 2>&1 || true
 
   log "Background setup finished."
