@@ -14,6 +14,9 @@ RUN docker-php-ext-install \
 # Apache modules
 RUN a2enmod rewrite headers expires
 
+# Ensure only one Apache MPM is enabled (php:apache expects prefork)
+RUN a2dismod mpm_event mpm_worker || true && a2enmod mpm_prefork
+
 # Custom vhost + php.ini overrides via env
 COPY apache-blesta.conf /etc/apache2/sites-available/000-default.conf
 COPY healthcheck.php /var/www/html/healthcheck.php
