@@ -1,26 +1,80 @@
-BLESTA_AUTO_LATEST="${BLESTA_AUTO_LATEST:-false}"
+#!/usr/bin/env bash
+set -euo pipefail
 
+# -----------------------------
+# Config
+# -----------------------------
+APP_ROOT="${APP_ROOT:-/data/blesta}"
+WEB_ROOT="${WEB_ROOT:-/var/www/html}"
+WAIT_FOR_DB_SECONDS="${WAIT_FOR_DB_SECONDS:-60}"
+
+BLESTA_AUTO_LATEST="${BLESTA_AUTO_LATEST:-false}"
+BLESTA_ZIP_URL="${BLESTA_ZIP_URL:-}"
+BLESTA_ZIP_SHA256="${BLESTA_ZIP_SHA256:-}"
+
+# -----------------------------
+# PHP configuration
+# -----------------------------
+PHP_INI="/usr/local/etc/php/conf.d/99-railway.ini"
+cat > "$PHP_INI" <<EOF
+memory_limit=${PHP_MEMORY_LIMIT:-256M}
+upload_max_filesize=${PHP_UPLOAD_MAX_FILESIZE:-64M}
+post_max_size=${PHP_POST_MAX_SIZE:-64M}
+max_execution_time=60
+date.timezone=UTC
+EOF
+
+# -----------------------------
+# Prepare directories
+# -----------------------------
+echo "[web] Preparing directories..."
+mkdir -p "$APP_ROOT" /data/tmp
+
+# -----------------------------
+# Wait for MySQL (best effort)
+# -----------------------------
+if [[ -n "${MYSQLHOST:-}" && -n "${MYSQLUSER:-}" && -n "${MYSQLPASSWORD:-}" ]]; then
+  echo "[web] Waiting for MySQL at ${MYSQLHOST}:${MYSQLPORT:-3306}..."
+  end=$((SECONDS + WAIT_FOR_DB_SECONDS))
+  until mysqladmin ping \
+      -h"${MYSQLHOST}" \
+      -P"${MYSQLPORT:-3306}" \
+      -u"${MYSQLUSER}" \
+      -p"${MYSQLPASSWORD}" \
+      --silent >/dev/null 2>&1; do
+    if (( SECONDS >= end )); then
+      echo "[web] MySQL not ready yet, continuing..."
+      break
+    fi
+    sleep 2
+  done
+fi
+
+# -----------------------------
+# Bootstrap Blesta
+# -----------------------------
 if [[ ! -f "${APP_ROOT}/index.php" ]]; then
   ZIP_PATH="/data/tmp/blesta.zip"
   rm -f "$ZIP_PATH"
 
-  if [[ -n "${BLESTA_ZIP_URL:-}" ]]; then
+  if [[ -n "$BLESTA_ZIP_URL" ]]; then
     echo "[web] Downloading Blesta from BLESTA_ZIP_URL..."
-    curl -fsSL "$BLESTA_ZIP_URL" -o "$ZIP_PATH"
+    curl -fL --retry 5 --retry-delay 2 "$BLESTA_ZIP_URL" -o "$ZIP_PATH"
   elif [[ "$BLESTA_AUTO_LATEST" == "true" ]]; then
     echo "[web] Downloading Blesta from official latest.zip..."
-    curl -fsSL "https://www.blesta.com/latest.zip" -o "$ZIP_PATH"
+    curl -fL --retry 5 --retry-delay 2 \
+      "https://www.blesta.com/latest.zip" -o "$ZIP_PATH"
   else
     echo "[web] No Blesta present and no download method configured."
-    echo "[web] Set BLESTA_ZIP_URL or set BLESTA_AUTO_LATEST=true."
     ZIP_PATH=""
   fi
 
   if [[ -n "$ZIP_PATH" && -f "$ZIP_PATH" ]]; then
-    echo "[web] Extracting..."
+    echo "[web] Extracting Blesta..."
     rm -rf "${APP_ROOT:?}/"*
     unzip -q "$ZIP_PATH" -d "$APP_ROOT"
 
+    # Handle nested /blesta directory
     if [[ -f "${APP_ROOT}/blesta/index.php" && ! -f "${APP_ROOT}/index.php" ]]; then
       echo "[web] Normalizing nested 'blesta/' directory..."
       shopt -s dotglob
@@ -29,6 +83,20 @@ if [[ ! -f "${APP_ROOT}/index.php" ]]; then
       shopt -u dotglob
     fi
 
-    echo "[web] Bootstrap done."
+    echo "[web] Blesta bootstrap complete."
   fi
 fi
+
+# -----------------------------
+# Permissions
+# -----------------------------
+echo "[web] Setting permissions..."
+chown -R www-data:www-data /data || true
+find "$APP_ROOT" -type d -exec chmod 755 {} \; || true
+find "$APP_ROOT" -type f -exec chmod 644 {} \; || true
+
+# -----------------------------
+# Start Apache
+# -----------------------------
+echo "[web] Starting Apache..."
+exec apache2-foreground
