@@ -49,24 +49,22 @@ echo "[web] Preparing directories..."
 mkdir -p "$APP_ROOT" /data/tmp
 
 # -----------------------------
-# Wait for MySQL (best effort)
+# Wait for MySQL
 # -----------------------------
 if [[ -n "${MYSQLHOST:-}" && -n "${MYSQLUSER:-}" && -n "${MYSQLPASSWORD:-}" ]]; then
-  echo "[web] Waiting for MySQL at ${MYSQLHOST}:${MYSQLPORT:-3306}..."
-  end=$((SECONDS + WAIT_FOR_DB_SECONDS))
-  until mysqladmin ping \
+  echo "[web] Checking MySQL at ${MYSQLHOST}:${MYSQLPORT:-3306} (non-blocking)..."
+  if mysqladmin ping \
       -h"${MYSQLHOST}" \
       -P"${MYSQLPORT:-3306}" \
       -u"${MYSQLUSER}" \
       -p"${MYSQLPASSWORD}" \
-      --silent >/dev/null 2>&1; do
-    if (( SECONDS >= end )); then
-      echo "[web] MySQL not ready yet, continuing..."
-      break
-    fi
-    sleep 2
-  done
+      --silent >/dev/null 2>&1; then
+    echo "[web] MySQL is reachable."
+  else
+    echo "[web] MySQL not reachable yet (continuing to start web anyway)."
+  fi
 fi
+
 
 # -----------------------------
 # Bootstrap Blesta
@@ -117,4 +115,16 @@ find "$APP_ROOT" -type f -exec chmod 644 {} \; || true
 # Start Apache
 # -----------------------------
 echo "[web] Starting Apache..."
+echo "[web] Starting Apache..."
+apache2-foreground &
+APACHE_PID=$!
+
+# If Blesta not installed, bootstrap in background (doesn't block Railway routing)
+if [[ ! -f "${APP_ROOT}/index.php" ]]; then
+  echo "[web] Bootstrapping in background..."
+  # (keep your existing bootstrap code here)
+fi
+
+wait $APACHE_PID
 exec apache2-foreground
+
