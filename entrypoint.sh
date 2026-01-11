@@ -2,6 +2,24 @@
 set -euo pipefail
 
 # -----------------------------
+# Make Apache listen on Railway PORT
+# -----------------------------
+PORT="${PORT:-80}"
+echo "[web] Configuring Apache to listen on PORT=${PORT}..."
+
+# Update ports.conf
+if grep -q "^Listen 80" /etc/apache2/ports.conf; then
+  sed -i "s/^Listen 80/Listen ${PORT}/" /etc/apache2/ports.conf
+else
+  # if Listen is different, ensure desired port is present
+  sed -i "s/^Listen .*/Listen ${PORT}/" /etc/apache2/ports.conf || true
+fi
+
+# Update default vhost to match port
+sed -i "s/<VirtualHost \*:80>/<VirtualHost \*:${PORT}>/" /etc/apache2/sites-available/000-default.conf || true
+
+
+# -----------------------------
 # Config
 # -----------------------------
 APP_ROOT="${APP_ROOT:-/data/blesta}"
