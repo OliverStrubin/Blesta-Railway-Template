@@ -21,7 +21,8 @@ COPY healthcheck.php /var/www/html/healthcheck.php
 # Entrypoints
 COPY entrypoint.sh /entrypoint.sh
 COPY cron.sh /cron.sh
-RUN chmod +x /entrypoint.sh /cron.sh
+RUN sed -i 's/\r$//' /entrypoint.sh /cron.sh && chmod +x /entrypoint.sh /cron.sh
+
 
 # Reasonable defaults
 ENV APP_ROOT=/data/blesta \
