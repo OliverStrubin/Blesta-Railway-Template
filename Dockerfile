@@ -3,7 +3,9 @@ FROM php:8.1-apache
 # -----------------------------
 # System dependencies
 # -----------------------------
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN set -eux; \
+  apt-get update; \
+  apt-get install -y --no-install-recommends \
     bash \
     unzip \
     ca-certificates \
@@ -20,11 +22,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # For gmp
     libgmp-dev \
     \
-    # For imap
-    libc-client2007e-dev \
+    # For imap (package names vary by Debian release)
     libkrb5-dev \
-    libssl-dev \
-  && rm -rf /var/lib/apt/lists/*
+    libssl-dev; \
+  \
+  # Try install IMAP dev headers with best-effort fallbacks
+  if apt-cache show libc-client-dev >/dev/null 2>&1; then \
+    apt-get install -y --no-install-recommends libc-client-dev; \
+  elif apt-cache show libimap-dev >/dev/null 2>&1; then \
+    apt-get install -y --no-install-recommends libimap-dev; \
+  else \
+    echo "WARNING: IMAP build deps not found in this distro; imap extension may be skipped."; \
+  fi; \
+  rm -rf /var/lib/apt/lists/*
 
 # -----------------------------
 # PHP extensions (Blesta compatible + recommended)
@@ -41,8 +51,15 @@ RUN docker-php-ext-install \
     soap
 
 # IMAP (recommended if you receive mail via IMAP)
-RUN docker-php-ext-configure imap --with-kerberos --with-imap-ssl \
- && docker-php-ext-install imap
+# If build deps weren't available, this may fail; we'll make it non-fatal.
+RUN set -eux; \
+  if php -m | grep -qi imap; then \
+    echo "imap already enabled"; \
+  else \
+    (docker-php-ext-configure imap --with-kerberos --with-imap-ssl \
+     && docker-php-ext-install imap) \
+    || echo "WARNING: Could not build imap extension on this base image."; \
+  fi
 
 # Mailparse (recommended for parsing incoming emails)
 RUN pecl install mailparse \
